@@ -1,0 +1,68 @@
+1. Auto-Scaling Script (Triggered When CPU Usage Exceeds 75%)
+
+cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2 + $4}')
+threshold=75.0
+CLOUD_IP="your-cloud-instance-ip"
+CLOUD_USER="ubuntu"
+LOCAL_APP_PATH="/home/ubuntu/weather-app"
+CLOUD_APP_PATH="/home/ubuntu/weather-app"
+
+migrate_to_cloud() {
+    echo "CPU usage exceeded $threshold%. Migrating workload to cloud..."
+    scp -r $LOCAL_APP_PATH $CLOUD_USER@$CLOUD_IP:$CLOUD_APP_PATH
+    ssh $CLOUD_USER@$CLOUD_IP "cd $CLOUD_APP_PATH && docker-compose up -d"
+    echo "Migration completed. App is running on $CLOUD_IP."
+}
+
+if (( $(echo "$cpu_usage > $threshold" | bc -l) )); then
+    migrate_to_cloud
+fi
+
+
+
+
+2. python script for whether application
+from flask import Flask, request, render_template
+import requests
+app = Flask(__name__)
+API_KEY = "dcnfo2hoijf9ho3y"
+BASE_URL = "http://api.openweathermap.org/data/2.5/weather"
+@app.route('/')
+def home():
+    city = request.args.get('city', 'Chennai')  # Default city: Chennai
+    params = {'q': city, 'appid': API_KEY, 'units': 'metric'}
+    response = requests.get(BASE_URL, params=params)
+    data = response.json()
+    if data["cod"] != 200:
+        weather = "City not found!"
+    else:
+        weather = {
+            "city": city,
+            "temperature": data["main"]["temp"],
+            "description": data["weather"][0]["description"]
+        }
+    return render_template('index.html', weather=weather)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+
+
+
+
+3. Docker implementation and running
+FROM python:3.9
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["python", "app.py"]
+
+
+docker build -t weather-app .
+docker run -d -p 5000:5000 weather-app
+
+
+
+
+4. deploying ono cloud after autoscalling
+ssh ubuntu@<CLOUD_IP> "cd /home/ubuntu/weather-app && docker-compose up -d"
+
